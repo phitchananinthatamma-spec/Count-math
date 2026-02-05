@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>COUNT ARENA – Multiplayer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root{
+  --bg:#000;
+  --panel:#0b0b0b;
+  --border:#333;
+  --white:#ffffff;
+  --neon:#38bdf8;
+  --good:#22c55e;
+  --bad:#ef4444;
+  --gold:#facc15;
+}
+
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--white);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-x:hidden;
+}
+
+/* ✨ background emojis */
+.sticker{
+  position:fixed;
+  font-size:48px;
+  opacity:0.12;
+  pointer-events:none;
+  filter: drop-shadow(0 0 12px #38bdf8);
+}
+.s1{ top:10%; left:5%; }
+.s2{ top:70%; left:8%; }
+.s3{ top:20%; right:6%; }
+.s4{ bottom:8%; right:10%; }
+.s5{ top:45%; right:45%; }
+
+.container{
+  max-width:960px;
+  margin:auto;
+  padding:20px;
+  position:relative;
+  z-index:2;
+}
+
+h1{
+  text-align:center;
+  font-size:34px;
+  margin-bottom:10px;
+  text-shadow:0 0 18px var(--neon);
+}
+
+.panel{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:20px;
+  margin-bottom:16px;
+  box-shadow:0 0 30px rgba(56,189,248,0.12);
+}
+
+input{
+  width:100%;
+  padding:12px;
+  margin:8px 0;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:#000;
+  color:#fff;
+  font-size:16px;
+}
+
+button{
+  width:100%;
+  padding:14px;
+  margin:8px 0;
+  border-radius:14px;
+  font-size:16px;
+  font-weight:800;
+  background:#111;
+  color:#fff;
+  border:2px solid var(--border);
+}
+button:hover{
+  border-color:var(--neon);
+  box-shadow:0 0 18px rgba(56,189,248,0.5);
+  cursor:pointer;
+}
+
+.answer{
+  background:#050505;
+}
+.answer.correct{
+  border-color:var(--good);
+}
+.answer.wrong{
+  border-color:var(--bad);
+}
+
+.scoreboard{
+  display:grid;
+  grid-template-columns: repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;
+}
+
+.player{
+  background:#050505;
+  border:1px solid var(--border);
+  padding:10px;
+  border-radius:12px;
+  text-align:center;
+}
+
+.explain{
+  margin-top:12px;
+  padding:12px;
+  border-radius:12px;
+  background:#020202;
+  border:1px solid var(--border);
+}
+
+.timer{
+  text-align:center;
+  font-size:22px;
+  font-weight:900;
+  margin-bottom:10px;
+  color:var(--gold);
+}
+</style>
+</head>
+
+<body>
+
+<!-- ✨ stickers -->
+<div class="sticker s1">🎮</div>
+<div class="sticker s2">✨</div>
+<div class="sticker s3">🧠</div>
+<div class="sticker s4">🏆</div>
+<div class="sticker s5">⭐</div>
+
+<div class="container">
+
+<h1>🏟 COUNT ARENA</h1>
+
+<div id="lobby" class="panel">
+  <input id="playerName" placeholder="ชื่อผู้เล่น">
+  <input id="roomCode" placeholder="รหัสห้อง (ถ้าเข้าห้อง)">
+  <button onclick="createRoom()">➕ สร้างห้อง</button>
+  <button onclick="joinRoom()">➡️ เข้าห้อง</button>
+</div>
+
+<div id="game" style="display:none;">
+  <div class="panel">
+    <div class="timer">⏱ เวลา: <span id="time">240</span>s</div>
+    <h2 id="question"></h2>
+    <div id="answers"></div>
+    <div id="explain" class="explain"></div>
+  </div>
+
+  <div class="panel">
+    <h3>🏆 คะแนน</h3>
+    <div id="scores" class="scoreboard"></div>
+  </div>
+</div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, set, update, onValue, increment } 
+from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+/* 🔥 Firebase config ของคุณ */
+const firebaseConfig = {
+  apiKey: "AIzaSyAScwLSlNF1i0cAAT-xadJTFOgGUEsIilk",
+  authDomain: "count-raid-game.firebaseapp.com",
+  databaseURL: "https://count-raid-game-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "count-raid-game",
+  storageBucket: "count-raid-game.firebasestorage.app",
+  messagingSenderId: "887793946867",
+  appId: "1:887793946867:web:14c0c60399fcefc8612786"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let roomId = "";
+let player = "";
+let timerStarted = false;
+
+const sampleQuestion = {
+  text:"มีเสื้อ 5 ตัว กางเกง 4 ตัว เลือกใส่ได้กี่แบบ?",
+  answers:[20,9,5,4],
+  correct:20,
+  explain:"หลักการคูณ: 5 × 4 = 20"
+};
+
+function createRoom(){
+  player = playerName.value.trim();
+  if(!player) return alert("ใส่ชื่อก่อน");
+  roomId = Math.random().toString(36).substring(2,6).toUpperCase();
+
+  set(ref(db,"rooms/"+roomId),{
+    time:240,
+    question: sampleQuestion,
+    players:{}
+  }).then(join);
+}
+
+function joinRoom(){
+  player = playerName.value.trim();
+  roomId = roomCode.value.trim().toUpperCase();
+  if(!player || !roomId) return alert("ใส่ชื่อและรหัสห้อง");
+  join();
+}
+
+function join(){
+  update(ref(db,"rooms/"+roomId+"/players"),{
+    [player]:{score:0}
+  });
+
+  lobby.style.display="none";
+  game.style.display="block";
+
+  onValue(ref(db,"rooms/"+roomId),(snap)=>{
+    const data = snap.val();
+    if(!data) return;
+
+    question.innerText = "🧠 " + data.question.text;
+    explain.innerText = "";
+
+    answers.innerHTML="";
+    data.question.answers.forEach(a=>{
+      const b=document.createElement("button");
+      b.className="answer";
+      b.innerText=a;
+      b.onclick=()=>submit(a,data.question.correct,data.question.explain);
+      answers.appendChild(b);
+    });
+
+    scores.innerHTML="";
+    Object.entries(data.players).forEach(([n,p])=>{
+      scores.innerHTML+=`<div class="player">${n}<br><b>${p.score}</b></div>`;
+    });
+
+    time.innerText = data.time;
+
+    if(!timerStarted){
+      timerStarted=true;
+      startTimer();
+    }
+  });
+}
+
+function submit(val,correct,ex){
+  if(val===correct){
+    update(ref(db,"rooms/"+roomId+"/players/"+player),{
+      score: increment(20)
+    });
+    explain.innerText="✅ ถูกต้อง! "+ex;
+  }else{
+    update(ref(db,"rooms/"+roomId+"/players/"+player),{
+      score: increment(-10)
+    });
+    explain.innerText="❌ ผิด! เฉลย: "+ex;
+  }
+}
+
+function startTimer(){
+  setInterval(()=>{
+    const tRef = ref(db,"rooms/"+roomId+"/time");
+    update(tRef, increment(-1));
+  },1000);
+}
+</script>
+
+</body>
+</html>
